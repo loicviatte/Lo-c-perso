@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+
+    <!-- Background depth gradient -->
+    <radialGradient id="bgDepth" cx="50%" cy="44%" r="62%" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#272727"/>
+      <stop offset="100%" stop-color="#0E0E0E"/>
+    </radialGradient>
+
+    <!-- Gold gradient along arc height — top/bottom slightly lighter -->
+    <linearGradient id="goldGrad" x1="0" y1="200" x2="0" y2="824" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#FBCF6E"/>
+      <stop offset="42%"  stop-color="#F5A623"/>
+      <stop offset="58%"  stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#FBCF6E"/>
+    </linearGradient>
+
+    <!-- Warm ambient glow behind arcs -->
+    <filter id="arcGlow" x="-40%" y="-12%" width="180%" height="124%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="1.2 0.4 0   0 0
+                0.6 0.4 0   0 0
+                0   0   0   0 0
+                0   0   0 0.55 0"
+        result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Clip to rounded rect so glow doesn't bleed outside icon -->
+    <clipPath id="iconClip">
+      <rect width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+
+  </defs>
+
+  <!-- Background: flat base + depth gradient on top -->
+  <rect width="1024" height="1024" rx="230" ry="230" fill="#1A1A1A"/>
+  <rect width="1024" height="1024" rx="230" ry="230" fill="url(#bgDepth)" opacity="0.9"/>
+
+  <!-- Arcs clipped to icon shape so glow stays inside -->
+  <g clip-path="url(#iconClip)">
+
+    <!-- Left arc — curves outward to the left -->
+    <path d="M 452,200 C 166,316 166,708 452,824"
+          fill="none"
+          stroke="url(#goldGrad)"
+          stroke-width="72"
+          stroke-linecap="round"
+          filter="url(#arcGlow)"/>
+
+    <!-- Right arc — perfect mirror -->
+    <path d="M 572,200 C 858,316 858,708 572,824"
+          fill="none"
+          stroke="url(#goldGrad)"
+          stroke-width="72"
+          stroke-linecap="round"
+          filter="url(#arcGlow)"/>
+
+  </g>
+</svg>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+
+    <!-- Soft off-white radial gradient for depth -->
+    <radialGradient id="bgDepth-white" cx="50%" cy="44%" r="65%" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#EBEBEB"/>
+    </radialGradient>
+
+    <!-- Dark arc gradient: near-black, slightly lighter at tips -->
+    <linearGradient id="darkGrad-white" x1="0" y1="200" x2="0" y2="824" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#2C2C2C"/>
+      <stop offset="42%"  stop-color="#111111"/>
+      <stop offset="58%"  stop-color="#111111"/>
+      <stop offset="100%" stop-color="#2C2C2C"/>
+    </linearGradient>
+
+    <!-- Subtle dark shadow to give arcs lift -->
+    <filter id="arcShadow-white" x="-30%" y="-10%" width="160%" height="120%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#000000" flood-opacity="0.15"/>
+    </filter>
+
+    <clipPath id="iconClip-white">
+      <rect width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+
+  </defs>
+
+  <!-- White background -->
+  <rect width="1024" height="1024" rx="230" ry="230" fill="#FFFFFF"/>
+  <rect width="1024" height="1024" rx="230" ry="230" fill="url(#bgDepth-white)" opacity="1"/>
+
+  <g clip-path="url(#iconClip-white)">
+
+    <path d="M 452,200 C 166,316 166,708 452,824"
+          fill="none"
+          stroke="url(#darkGrad-white)"
+          stroke-width="72"
+          stroke-linecap="round"
+          filter="url(#arcShadow-white)"/>
+
+    <path d="M 572,200 C 858,316 858,708 572,824"
+          fill="none"
+          stroke="url(#darkGrad-white)"
+          stroke-width="72"
+          stroke-linecap="round"
+          filter="url(#arcShadow-white)"/>
+
+  </g>
+</svg>
