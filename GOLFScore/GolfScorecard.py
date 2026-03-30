@@ -178,44 +178,61 @@ def make_window():
 
 
 # ── Timeline insertion ─────────────────────────────────────────────────────────
-def _insert_blank_fusion_clip(timeline):
+def _try_insert(timeline):
     """
-    Try several methods to insert a blank Fusion clip into the timeline.
-    Returns the inserted TimelineItem or None.
+    Try every known method to insert a blank Fusion-capable clip.
+    Returns (TimelineItem, comp) or (None, None).
     """
-    # DR 18+ built-in template names (try most common first)
-    title_names = ["Fusion Title", "Blank Fusion Title", ""]
-    gen_names   = ["Fusion Generator", "Blank Fusion Generator", ""]
-
-    for name in title_names:
+    # --- Method A: InsertFusionTitleIntoTimeline ---
+    for name in ["Fusion Title", ""]:
         try:
             item = timeline.InsertFusionTitleIntoTimeline(name)
             if item is not None:
-                print(f"[GolfScorecard] Inserted via InsertFusionTitleIntoTimeline('{name}')")
-                return item
+                comp = item.GetFusionCompByIndex(1)
+                if comp:
+                    print(f"[GS] OK via InsertFusionTitleIntoTimeline('{name}')")
+                    return item, comp
         except Exception as e:
-            print(f"[GolfScorecard] InsertFusionTitleIntoTimeline('{name}') error: {e}")
+            print(f"[GS] InsertFusionTitleIntoTimeline('{name}'): {e}")
 
-    for name in gen_names:
+    # --- Method B: InsertFusionGeneratorIntoTimeline ---
+    for name in ["Fusion Generator", ""]:
         try:
             item = timeline.InsertFusionGeneratorIntoTimeline(name)
             if item is not None:
-                print(f"[GolfScorecard] Inserted via InsertFusionGeneratorIntoTimeline('{name}')")
-                return item
+                comp = item.GetFusionCompByIndex(1)
+                if comp:
+                    print(f"[GS] OK via InsertFusionGeneratorIntoTimeline('{name}')")
+                    return item, comp
         except Exception as e:
-            print(f"[GolfScorecard] InsertFusionGeneratorIntoTimeline('{name}') error: {e}")
+            print(f"[GS] InsertFusionGeneratorIntoTimeline('{name}'): {e}")
 
-    return None
+    # --- Method C: standard generator + AddFusionComp ---
+    for name in ["Solid Color", "Color", "BG", "Background"]:
+        try:
+            item = timeline.InsertGeneratorIntoTimeline(name)
+            if item is not None:
+                print(f"[GS] InsertGeneratorIntoTimeline('{name}') OK, adding FusionComp...")
+                comp = item.AddFusionComp()
+                if comp:
+                    print(f"[GS] OK via InsertGeneratorIntoTimeline + AddFusionComp")
+                    return item, comp
+                # comp already exists at index 1?
+                comp = item.GetFusionCompByIndex(1)
+                if comp:
+                    print(f"[GS] OK via InsertGeneratorIntoTimeline + GetFusionCompByIndex")
+                    return item, comp
+        except Exception as e:
+            print(f"[GS] InsertGeneratorIntoTimeline('{name}'): {e}")
+
+    return None, None
 
 
 def insert_scorecard(hole_idx, stroke_num):
-    resolve.OpenPage("edit")
-
     project  = resolve.GetProjectManager().GetCurrentProject()
     timeline = project.GetCurrentTimeline() if project else None
-
     if timeline is None:
-        print("[GolfScorecard] ERROR: No active timeline.")
+        print("[GS] ERROR: No active timeline. Open a timeline on the Edit page first.")
         return
 
     hole          = state["holes"][hole_idx]
@@ -231,29 +248,26 @@ def insert_scorecard(hole_idx, stroke_num):
     except Exception:
         pass
 
-    print(f"[GolfScorecard] Inserting H{hole['number']} S{stroke_num} | {score_before}->{score_after} | fps={fps}")
+    print(f"[GS] Insert H{hole['number']} S{stroke_num} | {score_before}->{score_after} | fps={fps}")
 
     if timeline.GetTrackCount("video") < 2:
         timeline.AddTrack("video")
+        print("[GS] Added video track 2")
 
-    inserted = _insert_blank_fusion_clip(timeline)
-    if inserted is None:
-        print("[GolfScorecard] ERROR: All insert methods failed.")
-        print("[GolfScorecard] Check: are you on the Edit page with an active timeline?")
-        return
-
-    comp = inserted.GetFusionCompByIndex(1)
+    item, comp = _try_insert(timeline)
     if comp is None:
-        print("[GolfScorecard] ERROR: Could not access Fusion comp.")
+        print("[GS] ERROR: Could not insert a Fusion clip.")
+        print("[GS] Make sure you are on the Edit page with an active timeline.")
         return
 
     comp.Lock()
     try:
         _build_scorecard_nodes(comp, hole, player, stroke_num, total_strokes,
                                score_before, score_after, is_last, fps)
-        print("[GolfScorecard] Done.")
+        print("[GS] Scorecard built OK.")
     except Exception as e:
-        print(f"[GolfScorecard] ERROR building nodes: {e}")
+        print(f"[GS] ERROR building nodes: {e}")
+        import traceback; traceback.print_exc()
     finally:
         comp.Unlock()
 
@@ -261,76 +275,142 @@ def insert_scorecard(hole_idx, stroke_num):
 # ── Fusion node builder ──────────────────────────────────────────────────────────
 def _build_scorecard_nodes(comp, hole, player, stroke_num, total_strokes,
                            score_before, score_after, is_last, fps):
+    # Clear existing nodes
     for node in comp.GetToolList().values():
         node.Delete()
 
-    card_w, card_h     = 0.45, 0.115
-    anchor_x, anchor_y = 0.97, 0.93
+    # Layout constants (normalised 0..1, origin bottom-left)
+    card_w, card_h     = 0.45,  0.115
+    anchor_x, anchor_y = 0.97,  0.93
     cx = anchor_x - card_w / 2
     cy = anchor_y - card_h / 2
 
-    bg = comp.AddTool("Background", -2, 2)
-    bg.TopLeftRed[0]=0.102; bg.TopLeftGreen[0]=0.169
-    bg.TopLeftBlue[0]=0.290; bg.TopLeftAlpha[0]=1.0
+    # ---- Transparent base -----------------------------------------------
+    base = comp.AddTool("Background", -6, 0)
+    base.TopLeftRed[0] = base.TopLeftGreen[0] = base.TopLeftBlue[0] = 0.0
+    base.TopLeftAlpha[0] = 0.0          # fully transparent
 
-    rect = comp.AddTool("RectangleMask", -2, 1)
-    rect.Width[0]=card_w; rect.Height[0]=card_h
-    rect.Center[0]={1:cx,2:cy}; rect.CornerRadius[0]=0.012; rect.SoftEdge[0]=0.0
+    # ---- White border background + mask ---------------------------------
+    border_bg = comp.AddTool("Background", -4, 2)
+    border_bg.TopLeftRed[0] = border_bg.TopLeftGreen[0] = border_bg.TopLeftBlue[0] = 1.0
+    border_bg.TopLeftAlpha[0] = 1.0
 
-    bbg = comp.AddTool("Background", -1, 2)
-    bbg.TopLeftRed[0]=bbg.TopLeftGreen[0]=bbg.TopLeftBlue[0]=bbg.TopLeftAlpha[0]=1.0
+    border_mask = comp.AddTool("RectangleMask", -4, 3)
+    border_mask.Width[0]        = card_w + 0.006
+    border_mask.Height[0]       = card_h + 0.008
+    border_mask.Center[0]       = {1: cx, 2: cy}
+    border_mask.CornerRadius[0] = 0.014
+    border_mask.SoftEdge[0]     = 0.0
+    border_bg.EffectMask        = border_mask   # apply mask
 
-    brect = comp.AddTool("RectangleMask", -1, 1)
-    brect.Width[0]=card_w+0.005; brect.Height[0]=card_h+0.007
-    brect.Center[0]={1:cx,2:cy}; brect.CornerRadius[0]=0.014; brect.SoftEdge[0]=0.0
+    # ---- Navy card background + mask ------------------------------------
+    card_bg = comp.AddTool("Background", -4, 1)
+    card_bg.TopLeftRed[0]   = 0.102
+    card_bg.TopLeftGreen[0] = 0.169
+    card_bg.TopLeftBlue[0]  = 0.290
+    card_bg.TopLeftAlpha[0] = 1.0
 
-    lx=anchor_x-card_w+0.035; ty=anchor_y-0.022; by=anchor_y-card_h+0.022
+    card_mask = comp.AddTool("RectangleMask", -4, 0)
+    card_mask.Width[0]        = card_w
+    card_mask.Height[0]       = card_h
+    card_mask.Center[0]       = {1: cx, 2: cy}
+    card_mask.CornerRadius[0] = 0.012
+    card_mask.SoftEdge[0]     = 0.0
+    card_bg.EffectMask        = card_mask
 
-    _txt(comp, str(hole["number"]),       lx, ty-0.008, size=0.085, bold=True,             nx=0, ny=2)
-    _txt(comp, f"{hole['distance']} yds", lx, by,        size=0.030, r=.85,g=.85,b=.85,  nx=0, ny=1)
+    # ---- Merge: base ← border ← card -----------------------------------
+    m0 = comp.AddTool("Merge", -2, 2)
+    m0.Background = base
+    m0.Foreground  = border_bg
 
-    dx=anchor_x-card_w+0.095
-    dv=comp.AddTool("RectangleMask",1,1)
-    dv.Width[0]=0.0015; dv.Height[0]=card_h*.75; dv.Center[0]={1:dx,2:cy}; dv.SoftEdge[0]=0.0
+    m1 = comp.AddTool("Merge", -2, 1)
+    m1.Background = m0
+    m1.Foreground  = card_bg
 
-    nx_=anchor_x-card_w+0.19
-    _txt(comp, player.upper(), nx_, ty, size=0.048, bold=True, h_align="Left", nx=1, ny=2)
+    # ---- Divider line ---------------------------------------------------
+    div_x   = anchor_x - card_w + 0.095
+    div_bg  = comp.AddTool("Background", -2, 3)
+    div_bg.TopLeftRed[0] = div_bg.TopLeftGreen[0] = div_bg.TopLeftBlue[0] = div_bg.TopLeftAlpha[0] = 1.0
+    div_mask = comp.AddTool("RectangleMask", -2, 4)
+    div_mask.Width[0]  = 0.0015
+    div_mask.Height[0] = card_h * 0.75
+    div_mask.Center[0] = {1: div_x, 2: cy}
+    div_mask.SoftEdge[0] = 0.0
+    div_bg.EffectMask  = div_mask
 
-    for s in range(1, total_strokes+1):
-        act=(s==stroke_num)
-        _txt(comp, str(s), nx_+(s-1)*0.038, by,
-             size=0.034 if act else 0.030, bold=act,
-             r=0.302 if act else 1.0, g=0.816 if act else 1.0, b=0.882 if act else 1.0,
-             h_align="Left", nx=2+s, ny=1)
+    m2 = comp.AddTool("Merge", 0, 1)
+    m2.Background = m1
+    m2.Foreground  = div_bg
 
-    ts=_txt(comp, score_before, anchor_x-0.022, ty-0.008,
-            size=0.060, bold=True, h_align="Right", nx=3, ny=2)
+    # ---- Text nodes -----------------------------------------------------
+    lx = anchor_x - card_w + 0.035
+    ty = anchor_y - 0.022
+    by = anchor_y - card_h + 0.022
+
+    texts = [
+        _make_text(comp, str(hole["number"]),       lx,   ty - 0.008, size=0.085, bold=True),
+        _make_text(comp, f"{hole['distance']} yds", lx,   by,          size=0.030, r=.85,g=.85,b=.85),
+    ]
+
+    name_x = anchor_x - card_w + 0.19
+    texts.append(_make_text(comp, player.upper(), name_x, ty, size=0.048, bold=True, h_align="Left"))
+
+    for s in range(1, total_strokes + 1):
+        act = (s == stroke_num)
+        texts.append(_make_text(
+            comp, str(s), name_x + (s - 1) * 0.038, by,
+            size=0.034 if act else 0.030, bold=act,
+            r=0.302 if act else 1.0,
+            g=0.816 if act else 1.0,
+            b=0.882 if act else 1.0,
+            h_align="Left",
+        ))
+
+    t_score = _make_text(comp, score_before, anchor_x - 0.022, ty - 0.008,
+                         size=0.060, bold=True, h_align="Right")
     if is_last:
-        _animate_score(ts, score_before, score_after, fps)
+        _animate_score(t_score, score_before, score_after, fps)
+    texts.append(t_score)
 
-    comp.AddTool("MediaOut", 10, 0)
+    # ---- Merge all text layers on top -----------------------------------
+    current = m2
+    for t in texts:
+        mx = comp.AddTool("Merge", 0, 0)
+        mx.Background = current
+        mx.Foreground  = t
+        current = mx
+
+    # ---- MediaOut -------------------------------------------------------
+    out = comp.AddTool("MediaOut", 4, 0)
+    out.Input = current
 
 
-def _txt(comp, text, x, y, size=0.04, bold=False,
-         r=1.0, g=1.0, b=1.0, h_align="Center", nx=0, ny=0):
-    t=comp.AddTool("TextPlus",nx,ny)
-    t.StyledText[0]=text; t.Size[0]=size
-    t.Style="Bold" if bold else "Regular"
-    t.HorizontalAnchoring[0]=h_align
-    t.Red1[0]=r; t.Green1[0]=g; t.Blue1[0]=b
-    t.Center[0]={1:x,2:y}; t.VerticalAnchoring[0]="Center"
+def _make_text(comp, text, x, y, size=0.04, bold=False,
+               r=1.0, g=1.0, b=1.0, h_align="Center"):
+    t = comp.AddTool("TextPlus")
+    t.StyledText[0]          = text
+    t.Size[0]                = size
+    t.Style                  = "Bold" if bold else "Regular"
+    t.HorizontalAnchoring[0] = h_align
+    t.Red1[0]  = r
+    t.Green1[0]= g
+    t.Blue1[0] = b
+    t.Center[0] = {1: x, 2: y}
+    t.VerticalAnchoring[0] = "Center"
     return t
 
 
 def _animate_score(text_node, score_before, score_after, fps):
-    v0,v1=score_to_int(score_before),score_to_int(score_after)
-    if v0==v1: return
-    d=1 if v1>v0 else -1
-    steps=abs(v1-v0); dur=min(30,int(fps))
+    v0, v1 = score_to_int(score_before), score_to_int(score_after)
+    if v0 == v1: return
+    d = 1 if v1 > v0 else -1
+    steps = abs(v1 - v0)
+    dur   = min(30, int(fps))
     text_node.StyledText.MakeCubicSpline()
-    for i in range(steps+1):
-        frame=int(i*dur/steps); v=v0+d*i
-        text_node.StyledText[frame]="E" if v==0 else (f"+{v}" if v>0 else str(v))
+    for i in range(steps + 1):
+        frame = int(i * dur / steps)
+        v = v0 + d * i
+        text_node.StyledText[frame] = "E" if v == 0 else (f"+{v}" if v > 0 else str(v))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
