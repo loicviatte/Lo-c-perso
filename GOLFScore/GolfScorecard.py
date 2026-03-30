@@ -201,7 +201,12 @@ def _animate_score(text_node, score_before, score_after, fps):
         text_node.StyledText[frame] = label
 
 
-# ── UI ─────────────────────────────────────────────────────────────────────────
+# ── UI helpers ────────────────────────────────────────────────────────────────
+def _on(win, widget_id):
+    """Helper: returns the On-handler for widget_id using getattr (dot-notation equivalent)."""
+    return getattr(win.On, widget_id)
+
+
 def _make_hole_row(hole_idx):
     h = state["holes"][hole_idx]
     rows = [
@@ -298,48 +303,50 @@ def _sync_state(win):
 
 
 def refresh_holes(win):
-    """Rebuild hole cards and register their button handlers."""
+    print(f"[GolfScorecard] refresh_holes: {len(state['holes'])} hole(s)")
     container = win.Find("holes_container")
     container.Clear()
     for i in range(len(state["holes"])):
         container.AddChild(_make_hole_row(i))
 
-    # Register delete buttons
     for i in range(len(state["holes"])):
         def make_del(idx):
             def handler(ev):
+                print(f"[GolfScorecard] Delete hole {idx}")
                 state["holes"].pop(idx)
                 for j, h in enumerate(state["holes"]):
                     h["number"] = j + 1
                 refresh_holes(win)
             return handler
-        win.On[f"del_hole_{i}"].Clicked = make_del(i)
+        _on(win, f"del_hole_{i}").Clicked = make_del(i)
 
-    # Register insert buttons
     for i, h in enumerate(state["holes"]):
         for s in range(1, h["strokes"] + 1):
             def make_ins(hidx, snum):
                 def handler(ev):
+                    print(f"[GolfScorecard] Insert H{hidx+1} S{snum}")
                     _sync_state(win)
                     state["player"] = win.Find("player_name").Text
                     insert_scorecard(hidx, snum)
                 return handler
-            win.On[f"ins_{i}_{s}"].Clicked = make_ins(i, s)
+            _on(win, f"ins_{i}_{s}").Clicked = make_ins(i, s)
 
 
 def run():
     win = build_main_window()
 
-    win.On["GolfScorecard"].Close = lambda ev: disp.ExitLoop()
-
-    win.On["add_hole"].Clicked = lambda ev: (
+    def on_add_hole(ev):
+        print("[GolfScorecard] Add hole clicked")
         state["holes"].append({
             "number":   len(state["holes"]) + 1,
             "par":      4,
             "distance": 350,
             "strokes":  4,
-        }) or refresh_holes(win)
-    )
+        })
+        refresh_holes(win)
+
+    _on(win, "GolfScorecard").Close = lambda ev: disp.ExitLoop()
+    _on(win, "add_hole").Clicked    = on_add_hole
 
     win.Show()
     disp.RunLoop()
